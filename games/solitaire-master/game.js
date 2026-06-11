@@ -54,12 +54,8 @@ let totalFoundations = 0; // foundations placed this game
 function resize() {
   const winW = window.innerWidth;
   const winH = window.innerHeight;
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
   const targetRatio = 9/16;
-  // Internal resolution capped for consistent card rendering
-  W = 420;
-  H = Math.floor(W / targetRatio);
-  canvas.width = W;
-  canvas.height = H;
   // Display size: scale to fill viewport while keeping aspect ratio
   let dispH, dispW;
   if(winW / winH > targetRatio) {
@@ -71,6 +67,15 @@ function resize() {
   }
   canvas.style.width = dispW + 'px';
   canvas.style.height = dispH + 'px';
+  // Internal resolution = display size × dpr for sharp rendering on HiDPI
+  W = Math.floor(dispW * dpr);
+  H = Math.floor(dispH * dpr);
+  canvas.width = W;
+  canvas.height = H;
+  ctx.scale(dpr, dpr);
+  // Re-express W/H in CSS px for layout calculations
+  W = dispW;
+  H = dispH;
 
   // Card size: fit 8 columns in width with margins
   const margin = W * 0.012;
