@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Sudoku Classic — Free Number Puzzle</title>
+  <meta name="description" content="Play classic Sudoku for free. Fill the 9×9 grid without repeating numbers. Easy, Medium and Hard difficulty. No time limit." />
+  <meta name="keywords" content="sudoku, sudoku classic, number puzzle, free sudoku, sudoku online, sudoku game, puzzle game" />
+  <meta property="og:title" content="Sudoku Classic — Free Number Puzzle" />
+  <meta property="og:description" content="Classic Sudoku — 3 difficulty levels, no time limit. Beat your best time!" />
+  <meta property="og:type" content="website" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    body { margin:0; background:#0a0a1a; display:flex; align-items:center; justify-content:center; min-height:100vh; }
+    #game-container { position:relative; }
+  </style>
+</head>
+<body>
+
+<div id="game-container"></div>
+
+<!-- GameDistribution SDK -->
+<script>
+  window["GD_OPTIONS"] = {
+    "gameId": "96c5045cd38a4fb4a9c85a03aaed131a",
+    "onEvent": function(event) {
+      switch(event.name) {
+        case "SDK_GAME_START":
+          if (window.AudioManager) AudioManager.resume();
+          break;
+        case "SDK_READY":
+          console.log('[GD] SDK Ready');
+          break;
+      }
+    }
+  };
+  (function(d, s, id) {
+    var js, fjs = d.getElementsByTagName(s)[0];
+    if (d.getElementById(id)) return;
+    js = d.createElement(s); js.id = id;
+    js.src = 'https://html5.api.gamedistribution.com/main.min.js';
+    fjs.parentNode.insertBefore(js, fjs);
+  }(document, 'script', 'gamedistribution-jssdk'));
+</script>
+
+<!-- Phaser 3 -->
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+
+<!-- AdsManager — GameDistribution -->
+<script>
+const AdsManager = {
+  init() {},
+  showBanner() {},
+  hideBanner() {},
+  showInterstitial() {
+    if (window.gdsdk && gdsdk.showAd) {
+      gdsdk.showAd(gdsdk.AdType.Interstitial).catch(() => {});
+    }
+  },
+  showRewarded(cb) {
+    if (window.gdsdk && gdsdk.showAd) {
+      gdsdk.showAd(gdsdk.AdType.Rewarded)
+        .then(() => { if (typeof cb === 'function') cb(); })
+        .catch(() => { if (typeof cb === 'function') cb(); });
+    } else {
+      if (typeof cb === 'function') cb();
+    }
+  },
+  isRewardedReady() { return false; },
+};
+</script>
+
+<!-- Game -->
+<script src="audio.js"></script>
+<script src="vfx.js"></script>
+<script src="themes.js"></script>
+<script src="game.js"></script>
+
+</body>
+</html>
