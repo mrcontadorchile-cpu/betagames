@@ -656,8 +656,9 @@ class GameScene extends Phaser.Scene {
 
   // ── Ghost + Near Miss ─────────────────────────────────────────────
   getGridPos(px, py) {
-    // Offset upward by one cell so finger doesn't cover piece
-    const adjustY = py - GRID_CELL * 2.2;
+    // Piece bottom floats 3 cells above finger; offset = 3 + piece height
+    const maxR = this.dragPiece ? Math.max(...this.dragPiece.cells.map(([,r]) => r)) + 1 : 1;
+    const adjustY = py - (3 + maxR) * GRID_CELL;
     const col = Math.floor((px - GRID_X) / GRID_CELL);
     const row = Math.floor((adjustY - GRID_Y) / GRID_CELL);
     return { col, row };
@@ -725,8 +726,9 @@ class GameScene extends Phaser.Scene {
         this.dragImages.push(this.addBlockImage(x, y, size, color, alpha, 15));
       } else {
         // floating: grid-size, lifted above finger, centered horizontally
+        const maxR = Math.max(...this.dragPiece.cells.map(([,rr]) => rr)) + 1;
         x = this.smoothDragX - floatOffsetX + c * GRID_CELL;
-        y = this.smoothDragY - GRID_CELL * 2.2 + r * GRID_CELL;
+        y = this.smoothDragY - (3 + maxR) * GRID_CELL + r * GRID_CELL;
         this.dragImages.push(this.addBlockImage(x, y, floatSz, this.dragPiece.color, 0.92, 15));
       }
     });
