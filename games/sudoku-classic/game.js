@@ -851,6 +851,7 @@ new Phaser.Game({
   height: GAME_H,
   backgroundColor: '#0d1224',
   parent: 'game-container',
+  resolution: window.devicePixelRatio || 1,
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
