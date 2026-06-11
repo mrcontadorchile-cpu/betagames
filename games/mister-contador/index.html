@@ -1,13 +1,78 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Mister Contador — Zona Tributaria</title>
     <meta name="description" content="Beat 'em up estilo cómic sobre el mundo tributario chileno" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 100%; height: 100%;
+        background: #000;
+        overflow: hidden;
+        touch-action: none;
+      }
+      canvas {
+        display: block;
+        touch-action: none;
+      }
+
+      #rotate-overlay {
+        display: none;
+        position: fixed; inset: 0; z-index: 9999;
+        background: #000;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 24px;
+        font-family: monospace;
+        text-align: center;
+        padding: 32px;
+      }
+      #rotate-overlay .icon {
+        font-size: 72px;
+        animation: spin 1.8s ease-in-out infinite alternate;
+      }
+      #rotate-overlay p { font-size: 16px; line-height: 1.6; color: #fff; }
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(90deg); }
+      }
+      @media screen and (max-width: 900px) and (orientation: portrait) {
+        #rotate-overlay { display: flex; }
+      }
+    </style>
     <script type="module" crossorigin src="./assets/index-DgPoMc1V.js"></script>
   </head>
   <body>
+    <div id="rotate-overlay">
+      <div class="icon">📱</div>
+      <p><strong style="color:#ffcc00;font-size:18px">GIRA TU DISPOSITIVO</strong><br><br>
+         Este juego está optimizado<br>para modo horizontal.</p>
+    </div>
+
+
+    <script>
+      function requestFullscreenLandscape() {
+        const el = document.documentElement;
+        const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+        if (req) {
+          req.call(el).then(() => {
+            if (screen.orientation && screen.orientation.lock) {
+              screen.orientation.lock("landscape").catch(() => {});
+            }
+          }).catch(() => {});
+        } else if (screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock("landscape").catch(() => {});
+        }
+      }
+      document.addEventListener("touchstart", requestFullscreenLandscape, { once: true });
+      document.addEventListener("click", requestFullscreenLandscape, { once: true });
+    </script>
   </body>
 </html>
