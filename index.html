@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BetaGames — Juegos en desarrollo | mistercontador.cl</title>
+  <meta name="description" content="Portafolio de juegos web en desarrollo. Prueba los juegos directamente en tu browser.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://betagames.mistercontador.cl/">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg:      #050510;
+    --surface: #0d0d1f;
+    --border:  #1a1a3a;
+    --neon-g:  #00ff9f;
+    --neon-b:  #00cfff;
+    --neon-p:  #bf5fff;
+    --neon-y:  #ffe600;
+    --text:    #e0e0ff;
+    --muted:   #555577;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* CRT scanlines overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 9999;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,.18) 2px,
+      rgba(0,0,0,.18) 4px
+    );
+    pointer-events: none;
+  }
+
+  /* HEADER */
+  header {
+    text-align: center;
+    padding: 60px 24px 40px;
+    position: relative;
+    border-bottom: 2px solid var(--border);
+  }
+  .header-bg {
+    position: absolute; inset: 0; z-index: 0;
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(0,207,255,.08) 0%, transparent 60%),
+      radial-gradient(ellipse at 20% 100%, rgba(191,95,255,.06) 0%, transparent 50%);
+  }
+  /* Pixel grid floor */
+  header::after {
+    content: '';
+    position: absolute; bottom: 0; left: -20%; right: -20%; height: 60%;
+    background:
+      linear-gradient(rgba(0,207,255,.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,207,255,.06) 1px, transparent 1px);
+    background-size: 40px 40px;
+    transform: perspective(200px) rotateX(60deg);
+    transform-origin: bottom center;
+    mask-image: linear-gradient(to top, rgba(0,0,0,.6) 0%, transparent 80%);
+    pointer-events: none;
+  }
+  .header-inner { position: relative; z-index: 1; }
+  .site-tag {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    color: var(--neon-b);
+    letter-spacing: 3px;
+    margin-bottom: 16px;
+    text-shadow: 0 0 10px var(--neon-b);
+  }
+  h1 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(22px, 5vw, 42px);
+    line-height: 1.4;
+    color: var(--neon-g);
+    text-shadow: 0 0 20px var(--neon-g), 0 0 40px rgba(0,255,159,.3);
+    margin-bottom: 16px;
+  }
+  .subtitle {
+    font-size: 13px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    margin-bottom: 32px;
+  }
+  .insert-coin {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 11px;
+    color: var(--neon-y);
+    text-shadow: 0 0 8px var(--neon-y);
+    animation: blink 1.2s step-end infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+  /* NAV */
+  nav {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    font-family: 'Press Start 2P', monospace;
+  }
+  nav a {
+    color: var(--muted);
+    text-decoration: none;
+    transition: color .2s;
+  }
+  nav a:hover { color: var(--neon-g); text-shadow: 0 0 8px var(--neon-g); }
+
+  /* MAIN */
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 60px 24px 100px;
+  }
+
+  .section-label {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    color: var(--neon-p);
+    letter-spacing: 3px;
+    text-shadow: 0 0 8px var(--neon-p);
+    margin-bottom: 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--neon-p), transparent);
+    opacity: .4;
+  }
+
+  /* GAMES GRID */
+  .games-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 24px;
+    margin-bottom: 80px;
+  }
+
+  .game-card {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    position: relative;
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    transition: border-color .2s, box-shadow .2s, transform .2s;
+    overflow: hidden;
+  }
+  .game-card:hover {
+    border-color: var(--neon-g);
+    box-shadow: 0 0 20px rgba(0,255,159,.15), 4px 4px 0 var(--neon-g);
+    transform: translate(-2px,-2px);
+  }
+  .game-card.soon {
+    opacity: .5;
+    pointer-events: none;
+  }
+
+  /* Thumbnail */
+  .game-thumb {
+    width: 100%;
+    aspect-ratio: 16/9;
+    background: #0a0a1e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    border-bottom: 2px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .game-thumb::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+      90deg,
+      transparent, transparent 3px,
+      rgba(0,207,255,.03) 3px, rgba(0,207,255,.03) 4px
+    );
+  }
+
+  .game-body { padding: 20px; flex: 1; display: flex; flex-direction: column; }
+
+  .game-badges { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .badge {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 7px;
+    padding: 4px 8px;
+    border: 1px solid;
+    letter-spacing: 1px;
+  }
+  .badge-beta    { color: var(--neon-y); border-color: var(--neon-y); background: rgba(255,230,0,.05); }
+  .badge-nuevo   { color: var(--neon-g); border-color: var(--neon-g); background: rgba(0,255,159,.05); }
+  .badge-soon    { color: var(--muted);  border-color: var(--muted);  }
+  .badge-html5   { color: var(--neon-b); border-color: var(--neon-b); background: rgba(0,207,255,.05); }
+
+  .game-title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.5;
+    margin-bottom: 10px;
+  }
+  .game-desc {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.7;
+    flex: 1;
+    margin-bottom: 16px;
+  }
+  .game-cta {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    color: var(--neon-g);
+    text-shadow: 0 0 6px var(--neon-g);
+    letter-spacing: 1px;
+    align-self: flex-start;
+  }
+  .game-card.soon .game-cta { color: var(--muted); text-shadow: none; }
+
+  /* Corner decoration */
+  .game-card::after {
+    content: '';
+    position: absolute;
+    top: 0; right: 0;
+    border-style: solid;
+    border-width: 0 20px 20px 0;
+    border-color: transparent var(--neon-g) transparent transparent;
+    opacity: 0;
+    transition: opacity .2s;
+  }
+  .game-card:hover::after { opacity: 1; }
+
+  /* EMPTY STATE (primer juego placeholder) */
+  .empty-card {
+    border: 2px dashed var(--border);
+    background: transparent;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 40px;
+    min-height: 220px;
+    text-align: center;
+  }
+  .empty-card span {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 28px;
+  }
+  .empty-card p {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.7;
+    font-family: 'Press Start 2P', monospace;
+  }
+
+  /* FOOTER */
+  footer {
+    border-top: 2px solid var(--border);
+    padding: 40px 24px;
+    text-align: center;
+  }
+  footer p { font-size: 11px; color: var(--muted); line-height: 1.8; }
+  footer a { color: var(--neon-b); text-decoration: none; }
+  footer a:hover { text-shadow: 0 0 8px var(--neon-b); }
+  .pixel-hr {
+    height: 4px;
+    background: repeating-linear-gradient(
+      90deg,
+      var(--neon-g) 0px, var(--neon-g) 8px,
+      transparent 8px, transparent 16px,
+      var(--neon-b) 16px, var(--neon-b) 24px,
+      transparent 24px, transparent 32px,
+      var(--neon-p) 32px, var(--neon-p) 40px,
+      transparent 40px, transparent 48px
+    );
+    margin: 48px 0;
+    opacity: .4;
+  }
+
+  /* RESPONSIVE */
+  @media (max-width: 600px) {
+    h1 { font-size: 20px; }
+    .games-grid { grid-template-columns: 1fr; }
+    nav { gap: 16px; font-size: 9px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-bg"></div>
+  <div class="header-inner">
+    <p class="site-tag">BETAGAMES.MISTERCONTADOR.CL</p>
+    <h1>BETA<br>GAMES</h1>
+    <p class="subtitle">Juegos en desarrollo — pruébalos directo en tu browser</p>
+    <p class="insert-coin">▶ INSERT COIN TO PLAY ◀</p>
+  </div>
+</header>
+
+<nav>
+  <a href="#juegos">JUEGOS</a>
+  <a href="#proximamente">PRÓXIMAMENTE</a>
+  <a href="https://mistercontador.cl" target="_blank" rel="noopener noreferrer">MISTERCONTADOR.CL</a>
+</nav>
+
+<main>
+
+  <div id="juegos" class="section-label">// JUEGOS DISPONIBLES</div>
+
+  <div class="games-grid" id="games-grid">
+
+    <!-- PLACEHOLDER — reemplazar con juegos reales -->
+    <div class="empty-card">
+      <span>🕹️</span>
+      <p>PRIMER JUEGO<br>EN CAMINO...</p>
+    </div>
+
+    <div class="empty-card">
+      <span>👾</span>
+      <p>SLOT DISPONIBLE<br>PRONTO</p>
+    </div>
+
+    <div class="empty-card">
+      <span>🎮</span>
+      <p>SLOT DISPONIBLE<br>PRONTO</p>
+    </div>
+
+  </div>
+
+  <div class="pixel-hr"></div>
+
+  <div id="proximamente" class="section-label">// PRÓXIMAMENTE</div>
+
+  <div class="games-grid">
+    <div class="game-card soon">
+      <div class="game-thumb">🚀</div>
+      <div class="game-body">
+        <div class="game-badges">
+          <span class="badge badge-soon">SOON</span>
+          <span class="badge badge-html5">HTML5</span>
+        </div>
+        <div class="game-title">???</div>
+        <p class="game-desc">En desarrollo. Vuelve pronto.</p>
+        <span class="game-cta">COMING SOON...</span>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  <p>
+    Hecho con ☕ · <a href="https://mistercontador.cl" target="_blank" rel="noopener noreferrer">mistercontador.cl</a><br>
+    <small style="font-size:10px; color:#333;">Los juegos son proyectos personales en beta — pueden tener bugs.</small>
+  </p>
+</footer>
+
+</body>
+</html>
