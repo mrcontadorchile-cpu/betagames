@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Solitaire Master - FreeCell</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; }
+body {
+  background:
+    radial-gradient(circle at 50% 18%, rgba(255,213,79,0.12), transparent 28%),
+    radial-gradient(circle at 18% 82%, rgba(100,181,246,0.12), transparent 24%),
+    #070b16;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-height: 100vh; min-height: 100dvh;
+  font-family: Arial, sans-serif;
+  overflow: hidden;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none; user-select: none;
+}
+#gameCanvas {
+  display: block;
+  cursor: pointer;
+  touch-action: none;
+  filter: drop-shadow(0 18px 36px rgba(0,0,0,0.35));
+}
+#muteBtn {
+  position: fixed; top: 12px; right: 12px;
+  background: linear-gradient(145deg, rgba(255,255,255,0.20), rgba(255,255,255,0.06));
+  border: 1px solid rgba(255,255,255,0.32);
+  color: white; font-size: 20px;
+  width: 44px; height: 44px;
+  border-radius: 50%; cursor: pointer;
+  z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+#muteBtn:hover { background: linear-gradient(145deg, rgba(255,255,255,0.26), rgba(255,255,255,0.09)); }
+#loadingScreen {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: #070b16; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; z-index: 1000;
+  transition: opacity 0.5s;
+}
+#loadingScreen.done { opacity: 0; pointer-events: none; }
+#loadingTitle { color: #ffd54f; font: bold 28px Arial Black; margin-bottom: 8px; }
+#loadingSub { color: #aabbcc; font: 14px Arial; margin-bottom: 24px; }
+#loadingBar { width: 200px; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; }
+#loadingFill { width: 0%; height: 100%; background: #ffd54f; border-radius: 3px; transition: width 0.3s; }
+</style>
+</head>
+<body>
+<div id="loadingScreen">
+  <div id="loadingTitle">SOLITAIRE MASTER</div>
+  <div id="loadingSub">FreeCell</div>
+  <div id="loadingBar"><div id="loadingFill"></div></div>
+</div>
+<canvas id="gameCanvas"></canvas>
+<button id="muteBtn" onclick="AudioManager.toggle()">🔊</button>
+
+<!-- Poki SDK -->
+<script src="https://game-cdn.poki.com/scripts/v2/poki-sdk.js"></script>
+<script>
+// Poki-powered AdsManager
+const AdsManager = {
+  _pokiReady: false,
+  async init() {
+    try {
+      await PokiSDK.init();
+      this._pokiReady = true;
+      PokiSDK.gameLoadingStart();
+    } catch(e) {
+      this._pokiReady = false;
+    }
+  },
+  loadingFinished() {
+    if(this._pokiReady) PokiSDK.gameLoadingFinished();
+  },
+  gameplayStart() {
+    if(this._pokiReady) PokiSDK.gameplayStart();
+  },
+  gameplayStop() {
+    if(this._pokiReady) PokiSDK.gameplayStop();
+  },
+  happyTime(intensity) {
+    if(this._pokiReady) PokiSDK.happyTime(intensity);
+  },
+  showBanner() {},
+  hideBanner() {},
+  async showInterstitial() {
+    if(!this._pokiReady) return;
+    this.gameplayStop();
+    if(window.AudioManager) AudioManager._pauseBg();
+    try {
+      await PokiSDK.commercialBreak();
+    } catch(e) {}
+    if(window.AudioManager) AudioManager._resumeBg();
+    this.gameplayStart();
+  },
+  async showRewarded(cb) {
+    if(!this._pokiReady) { if(cb) cb(); return; }
+    this.gameplayStop();
+    if(window.AudioManager) AudioManager._pauseBg();
+    try {
+      const ok = await PokiSDK.rewardedBreak();
+      if(ok && cb) cb();
+    } catch(e) { if(cb) cb(); }
+    if(window.AudioManager) AudioManager._resumeBg();
+    this.gameplayStart();
+  },
+  isRewardedReady() { return this._pokiReady; }
+};
+</script>
+<script src="audio.js"></script>
+<script src="themes.js"></script>
+<script src="vfx.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
