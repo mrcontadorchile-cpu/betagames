@@ -597,6 +597,9 @@ class GameScene extends Phaser.Scene {
         this.dragY = ptr.y;
         this.smoothDragX = ptr.x;
         this.smoothDragY = ptr.y;
+        // Lift animation: scale from 0.6 → 1 over 120ms
+        this.dragScale = 0.6;
+        this.tweens.add({ targets: this, dragScale: 1, duration: 120, ease: 'Back.Out' });
         this.renderTray();
         this.updateGhostAndNearMiss();
         this.renderDragPiece();
@@ -625,6 +628,7 @@ class GameScene extends Phaser.Scene {
     const placed = this.tryPlace();
     this.dragPiece = null;
     this.dragIndex = null;
+    this.dragScale = 1;
     this.ghostCells = [];
     this.nearMissCols = [];
     this.nearMissRows = [];
@@ -653,7 +657,7 @@ class GameScene extends Phaser.Scene {
   // ── Ghost + Near Miss ─────────────────────────────────────────────
   getGridPos(px, py) {
     // Offset upward by one cell so finger doesn't cover piece
-    const adjustY = py - GRID_CELL * 1.5;
+    const adjustY = py - GRID_CELL * 2.2;
     const col = Math.floor((px - GRID_X) / GRID_CELL);
     const row = Math.floor((adjustY - GRID_Y) / GRID_CELL);
     return { col, row };
@@ -707,6 +711,9 @@ class GameScene extends Phaser.Scene {
     const onGrid = col >= 0 && row >= 0 && col < GRID_COLS && row < GRID_ROWS;
 
     // Draw at grid-snapped position if on grid, else at smooth finger pos
+    const maxC = Math.max(...this.dragPiece.cells.map(([cc]) => cc)) + 1;
+    const floatOffsetX = (maxC * GRID_CELL) / 2;
+    const floatSz = GRID_CELL * this.dragScale;
     this.dragPiece.cells.forEach(([c, r]) => {
       let x, y;
       if (onGrid) {
@@ -717,10 +724,10 @@ class GameScene extends Phaser.Scene {
         const color = canPlace ? this.dragPiece.color : 0xff2222;
         this.dragImages.push(this.addBlockImage(x, y, size, color, alpha, 15));
       } else {
-        // floating near finger with lerp
-        x = this.smoothDragX + c * TRAY_CELL - TRAY_CELL;
-        y = this.smoothDragY + r * TRAY_CELL - GRID_CELL * 1.5;
-        this.dragImages.push(this.addBlockImage(x, y, TRAY_CELL, this.dragPiece.color, 0.9, 15));
+        // floating: grid-size, lifted above finger, centered horizontally
+        x = this.smoothDragX - floatOffsetX + c * GRID_CELL;
+        y = this.smoothDragY - GRID_CELL * 2.2 + r * GRID_CELL;
+        this.dragImages.push(this.addBlockImage(x, y, floatSz, this.dragPiece.color, 0.92, 15));
       }
     });
   }
