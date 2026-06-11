@@ -1279,13 +1279,13 @@ function startGame(level=currentDifficulty) {
   if(shouldShowTutorial()) startTutorial();
 }
 
-function newGame() {
+async function newGame() {
   AdsManager.gameplayStop();
   gameOverCount++;
-  if(gameOverCount % 3 === 0) AdsManager.showInterstitial();
   saveProgress();
   pausedAt = 0;
   pausedTotal = 0;
+  if(gameOverCount % 3 === 0) await AdsManager.showInterstitial();
   gameState = 'menu';
   AdsManager.showBanner();
 }
