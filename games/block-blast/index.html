@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Block Blast — Puzzle de Bloques</title>
+  <meta name="description" content="Arrastra bloques al tablero 8x8, completa líneas y supera tu récord. Puzzle adictivo sin límite de tiempo." />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    body { margin:0; background:#0a0a1a; display:flex; align-items:center; justify-content:center; min-height:100vh; }
+    #game-container { position:relative; }
+  </style>
+</head>
+<body>
+
+<div id="game-container"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+
+<!-- AdsManager stub (sin SDK) -->
+<script>
+const AdsManager = {
+  init() {},
+  showBanner() {},
+  hideBanner() {},
+  showInterstitial() {},
+  showRewarded(cb) { if (typeof cb === 'function') cb(); },
+  isRewardedReady() { return false; }
+};
+</script>
+
+<script src="audio.js"></script>
+<script src="pieces.js"></script>
+<script src="vfx.js"></script>
+<script src="themes.js"></script>
+<script src="textures.js"></script>
+<script src="game.js"></script>
+
+</body>
+</html>
