@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Gluto — prototipo (Lucky Drop)</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #120c1d; height: 100%; overflow: hidden; }
+  #game { display: flex; justify-content: center; height: 100%; }
+</style>
+<script>
+  // captura de errores para diagnóstico (prototipo)
+  window.__errs = [];
+  window.addEventListener('error', e => window.__errs.push(`${e.message} @${e.lineno}:${e.colno}`));
+</script>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+</head>
+<body>
+<div id="game"></div>
+<script>
+// ---------- Config de diseño (GDD v0.1) ----------
+const W = 420, H = 740;
+const WALL = 12;
+const DANGER_Y = 150;
+const TIERS = [
+  { r: 24,  pts: 2,   color: 0xffe9a8, dark: 0xc9a84f },
+  { r: 32,  pts: 4,   color: 0x9ef0a0, dark: 0x4f9e54 },
+  { r: 42,  pts: 8,   color: 0x84dcf5, dark: 0x3a87a8 },
+  { r: 54,  pts: 16,  color: 0x96a3ff, dark: 0x4d5bc4 },
+  { r: 68,  pts: 32,  color: 0xcf96ff, dark: 0x8a4dc4 },
+  { r: 84,  pts: 64,  color: 0xff96d5, dark: 0xc44d92 },
+  { r: 102, pts: 128, color: 0xffb486, dark: 0xc4713a },
+  { r: 124, pts: 256, color: 0xffd700, dark: 0xb8860b },
+];
+const SPAWN_ODDS = [0.50, 0.85, 1.0];
+const GOLDEN_CHANCE = 0.08;
+const MULT_STEPS = [1, 2, 4, 8];
+const DROP_COOLDOWN = 420;
+const OVERFLOW_GRACE = 2200;
+const ORB_MIN_AGE = 1300;     // ms antes de contar para desborde
+
+// ---------- Ajustes persistentes ----------
+const SETTINGS = Object.assign(
+  { sfx: true, theme: 'noche', diff: 'normal' },
+  JSON.parse(localStorage.getItem('gluto_cfg') || '{}')
+);
+const saveSettings = () => localStorage.setItem('gluto_cfg', JSON.stringify(SETTINGS));
+
+const THEMES = {
+  noche:  { label: 'NOCHE',  bgTop: 0x241836, bgBot: 0x120c1d, bgBot2: 0x18102a, wall: 0x3d2f55, edge: 0x6a5a8f },
+  bosque: { label: 'BOSQUE', bgTop: 0x16301f, bgBot: 0x0a1a10, bgBot2: 0x0e2416, wall: 0x2f5540, edge: 0x5a8f6e },
+  abismo: { label: 'ABISMO', bgTop: 0x10243a, bgBot: 0x081220, bgBot2: 0x0c1a2c, wall: 0x2f4055, edge: 0x5a748f },
+};
+
+const DIFFS = {
+  facil:   { label: 'FÁCIL',   gravity: 0.95, grace: 3200, odds: [0.60, 0.90, 1] },
+  normal:  { label: 'NORMAL',  gravity: 1.10, grace: 2200, odds: [0.50, 0.85, 1] },
+  dificil: { label: 'DIFÍCIL', gravity: 1.30, grace: 1400, odds: [0.40, 0.75, 1] },
+};
+
+// ---------- SFX sintetizados (sin assets) ----------
+const SFX = {
+  ctx: null,
+  play(type, tier = 0) {
+    if (!SETTINGS.sfx) return;
+    try {
+      if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const c = this.ctx, o = c.createOscillator(), g = c.createGain(), t = c.currentTime;
+      const conf = {
+        drop:  { f0: 300, f1: 170, dur: 0.08, wave: 'sine', vol: 0.12 },
+        merge: { f0: 320 + tier * 80, f1: (320 + tier * 80) * 2, dur: 0.13, wave: 'triangle', vol: 0.20 },
+        gulp:  { f0: 520, f1: 110, dur: 0.28, wave: 'sine', vol: 0.30 },
+        over:  { f0: 260, f1: 55, dur: 0.70, wave: 'sawtooth', vol: 0.18 },
+        click: { f0: 620, f1: 540, dur: 0.05, wave: 'square', vol: 0.08 },
+        level: { f0: 440, f1: 880, dur: 0.32, wave: 'triangle', vol: 0.24 },
+      }[type];
+      o.type = conf.wave; o.connect(g); g.connect(c.destination);
+      o.frequency.setValueAtTime(conf.f0, t);
+      o.frequency.exponentialRampToValueAtTime(Math.max(conf.f1, 1), t + conf.dur);
+      g.gain.setValueAtTime(conf.vol, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + conf.dur);
+      o.start(t); o.stop(t + conf.dur + 0.02);
+    } catch (e) { /* audio no disponible: ignorar */ }
+  },
+};
+
+// ---------- Helper de botones ----------
+function mkBtn(scene, x, y, w, h, label, onTap, opts = {}) {
+  const c = scene.add.container(x, y).setDepth(opts.depth || 100);
+  const bg = scene.add.rectangle(0, 0, w, h, opts.bg ?? 0xffd700)
+    .setStrokeStyle(2, opts.stroke ?? 0xfff6c0).setInteractive();
+  const tx = scene.add.text(0, 0, label, {
+    fontFamily: 'Arial Black', fontSize: opts.size || 18, color: opts.color || '#1a1226',
+  }).setOrigin(0.5);
+  bg.on('pointerdown', (p, lx, ly, ev) => { if (ev) ev.stopPropagation(); SFX.play('click'); onTap(tx); });
+  c.add([bg, tx]);
+  return c;
+}
+
+class Main extends Phaser.Scene {
+  constructor() { super('main'); }
+
+  // ---------- Texturas generadas ----------
+  makeTextures() {
+    if (this.textures.exists('spark')) return;
+    // chispa para partículas
+    let g = this.make.graphics({ add: false });
+    g.fillStyle(0xffffff, 1).fillCircle(8, 8, 8);
+    g.generateTexture('spark', 16, 16);
+    g.destroy();
+
+    // orbes-criatura por tier (+ variante dorada)
+    TIERS.forEach((t, i) => {
+      for (const golden of [false, true]) {
+        const r = t.r, s = r * 2 + 8, cx = s / 2, cy = s / 2;
+        const gr = this.make.graphics({ add: false });
+        // cuerpo: base oscura + cuerpo + brillo
+        gr.fillStyle(golden ? 0xb8860b : t.dark, 1).fillCircle(cx, cy, r);
+        gr.fillStyle(golden ? 0xffd700 : t.color, 1).fillCircle(cx, cy - r * 0.06, r * 0.92);
+        gr.fillStyle(0xffffff, 0.35).fillEllipse(cx - r * 0.3, cy - r * 0.45, r * 0.7, r * 0.45);
+        // cara (ojos + boca) — escala con el tier
+        const er = Math.max(2.5, r * 0.10), ex = r * 0.32, ey = r * 0.08;
+        gr.fillStyle(0x2a1a3a, 1);
+        gr.fillCircle(cx - ex, cy - ey, er).fillCircle(cx + ex, cy - ey, er);
+        gr.fillStyle(0xffffff, 0.9);
+        gr.fillCircle(cx - ex + er * 0.3, cy - ey - er * 0.3, er * 0.35);
+        gr.fillCircle(cx + ex + er * 0.3, cy - ey - er * 0.3, er * 0.35);
+        // boca: sonrisa que crece con el tier
+        gr.lineStyle(Math.max(2, r * 0.06), 0x2a1a3a, 1);
+        gr.beginPath();
+        gr.arc(cx, cy + r * 0.18, r * (0.16 + i * 0.02), 0.15 * Math.PI, 0.85 * Math.PI);
+        gr.strokePath();
+        if (golden) gr.lineStyle(Math.max(3, r * 0.08), 0xfff6c0, 1).strokeCircle(cx, cy, r - 1);
+        gr.generateTexture(`orb${i}${golden ? 'g' : ''}`, s, s);
+        gr.destroy();
+      }
+    });
+  }
+
+  create() {
+    this.th = THEMES[SETTINGS.theme];
+    this.diff = DIFFS[SETTINGS.diff];
+    this.makeTextures();
+    this.matter.world.setBounds(WALL, -200, W - WALL * 2, H - WALL + 200, 64, true, true, false, true);
+    this.matter.world.setGravity(0, this.diff.gravity);
+
+    // Estado
+    this.score = 0; this.bank = 0; this.multIdx = 0;
+    this.cascadeCount = 0; this.canDrop = true; this.gameOver = false;
+    this.overflowSince = null;
+    this.mergeQueue = [];          // <- los merges se procesan FUERA del paso físico
+    this.orbs = this.add.group();
+    // Persistencia: luz total alimenta la madriguera entre partidas
+    this.totalLuz = parseInt(localStorage.getItem('gluto_luz') || '0', 10);
+
+    this.buildBackground();
+    this.buildHud();
+
+    // Preview del próximo orbe
+    this.nextTier = this.rollTier();
+    this.preview = this.add.image(W / 2, 64, 'orb0').setAlpha(0.55);
+    this.aimLine = this.add.rectangle(W / 2, (DANGER_Y + H) / 2, 2, H - DANGER_Y, 0xffffff, 0.06);
+    this.updatePreview(W / 2);
+
+    this.input.on('pointermove', p => this.updatePreview(p.x));
+    this.input.on('pointerdown', p => this.drop(p.x));
+
+    window.__scene = this; // debug prototipo
+
+    // Colisiones: SOLO encolar, nunca destruir aquí
+    this.matter.world.on('collisionstart', e => {
+      for (const pair of e.pairs) {
+        const a = pair.bodyA.gameObject, b = pair.bodyB.gameObject;
+        if (!a || !b || !a.getData || !b.getData) continue;
+        const ta = a.getData('tier'), tb = b.getData('tier');
+        if (ta !== undefined && ta === tb && ta < TIERS.length - 1) {
+          this.mergeQueue.push([a, b]);
+        }
+      }
+    });
+  }
+
+  buildBackground() {
+    const g = this.add.graphics();
+    g.fillGradientStyle(this.th.bgTop, this.th.bgTop, this.th.bgBot, this.th.bgBot2, 1);
+    g.fillRect(0, 0, W, H);
+    // burbujas ambientales lentas
+    for (let i = 0; i < 14; i++) {
+      const b = this.add.circle(Phaser.Math.Between(20, W - 20), Phaser.Math.Between(0, H), Phaser.Math.Between(2, 5), 0xffffff, 0.05);
+      this.tweens.add({
+        targets: b, y: '-=120', alpha: 0,
+        duration: Phaser.Math.Between(6000, 12000), repeat: -1,
+        onRepeat: () => { b.y = H + 10; b.alpha = 0.05; b.x = Phaser.Math.Between(20, W - 20); },
+      });
+    }
+    // paredes con bisel
+    this.add.rectangle(WALL / 2, H / 2, WALL, H, this.th.wall);
+    this.add.rectangle(W - WALL / 2, H / 2, WALL, H, this.th.wall);
+    this.add.rectangle(W / 2, H - WALL / 2, W, WALL, this.th.wall);
+    this.add.rectangle(WALL + 1, H / 2, 2, H, this.th.edge, 0.5);
+    this.add.rectangle(W - WALL - 1, H / 2, 2, H, this.th.edge, 0.5);
+    // zona de peligro: franja punteada
+    this.dangerZone = this.add.rectangle(W / 2, DANGER_Y, W - WALL * 2, 3, 0xff5566, 0.55);
+    this.dangerGlow = this.add.rectangle(W / 2, DANGER_Y - 14, W - WALL * 2, 28, 0xff5566, 0.07);
+    this.buildGluto();
+  }
+
+  // ---------- Gluto: el pozo es su boca ----------
+  buildGluto() {
+    // dientes colgando de la línea de peligro (la "mandíbula superior")
+    this.teeth = this.add.container(0, DANGER_Y).setDepth(5);
+    const toothW = 28, n = Math.floor((W - WALL * 2) / toothW);
+    for (let i = 0; i < n; i++) {
+      const x = WALL + i * toothW;
+      const tri = this.add.triangle(x + toothW / 2, 0, 0, 0, toothW, 0, toothW / 2, 16, 0xfff6e8).setOrigin(0.5, 0);
+      this.teeth.add(tri);
+    }
+    // ojos a los costados, sobre la boca
+    this.eyes = [];
+    for (const ex of [WALL + 52, W - WALL - 52]) {
+      const white = this.add.ellipse(ex, DANGER_Y - 42, 46, 54, 0xfff6e8).setDepth(5);
+      const pupil = this.add.circle(ex, DANGER_Y - 38, 12, 0x2a1a3a).setDepth(6);
+      const shine = this.add.circle(ex + 4, DANGER_Y - 44, 4, 0xffffff, 0.95).setDepth(7);
+      this.eyes.push({ white, pupil, shine, baseX: ex, baseY: DANGER_Y - 38 });
+    }
+    // parpadeo
+    this.time.addEvent({
+      delay: 3400, loop: true, callback: () => {
+        if (this.gameOver) return;
+        for (const e of this.eyes) {
+          this.tweens.add({ targets: [e.white, e.pupil, e.shine], scaleY: 0.08, duration: 70, yoyo: true });
+        }
+      },
+    });
+  }
+
+  glutoMood() {
+    // pupilas siguen al orbe en preview; se encogen si está por desbordar
+    const nervous = !!this.overflowSince;
+    for (const e of this.eyes) {
+      const dx = Phaser.Math.Clamp((this.preview.x - e.baseX) / (W / 2), -1, 1) * 8;
+      e.pupil.x = e.baseX + dx;
+      e.shine.x = e.baseX + dx + 4;
+      const s = nervous ? 0.55 : (this.multIdx >= 1 ? 1.3 : 1); // miedo achica, hambre dilata
+      e.pupil.setScale(s, e.pupil.scaleY < 0.5 ? e.pupil.scaleY : s);
+    }
+  }
+
+  glutoChomp() {
+    // ojos se agrandan de emoción
+    for (const e of this.eyes) {
+      this.tweens.add({ targets: [e.white], scaleX: 1.3, scaleY: 1.4, duration: 150, ease: 'Back.Out' });
+      this.tweens.add({ targets: [e.pupil], scale: 1.5, duration: 150, ease: 'Back.Out' });
+    }
+    // boca se abre (dientes suben)
+    this.tweens.add({ targets: this.teeth, y: DANGER_Y - 16, scaleY: 1.6, duration: 180, ease: 'Sine.Out', onComplete: () => {
+      // mordida: dientes bajan con fuerza
+      this.tweens.add({ targets: this.teeth, y: DANGER_Y, scaleY: 2.6, duration: 60, yoyo: true, ease: 'Quad.Out',
+        onYoyo: () => { this.cameras.main.shake(100, 0.01); }
+      });
+      // ojos cierran con el mordisco
+      for (const e of this.eyes) {
+        this.tweens.add({ targets: [e.white, e.pupil, e.shine], scaleY: 0.05, duration: 50, yoyo: true, hold: 70 });
+      }
+      // vuelta a normal
+      this.time.delayedCall(200, () => {
+        for (const e of this.eyes) {
+          this.tweens.add({ targets: [e.white], scaleX: 1, scaleY: 1, duration: 250 });
+          this.tweens.add({ targets: [e.pupil], scale: 1, duration: 250 });
+        }
+        this.tweens.add({ targets: this.teeth, scaleY: 1, duration: 180 });
+      });
+    }});
+  }
+
+  buildHud() {
+    // panel score
+    this.add.rectangle(W / 2, 30, 200, 44, 0x000000, 0.35).setOrigin(0.5);
+    this.scoreText = this.add.text(W / 2, 30, '0', { fontFamily: 'Arial Black', fontSize: 26, color: '#ffffff' }).setOrigin(0.5);
+    this.add.text(W / 2 - 88, 30, 'SCORE', { fontSize: 11, color: '#9a8fc0' }).setOrigin(0, 0.5);
+
+    // badge multiplicador
+    this.multBadge = this.add.container(W - 42, 30).setDepth(20);
+    const mbg = this.add.circle(0, 0, 22, 0xff5566).setStrokeStyle(3, 0xffffff, 0.8);
+    this.multText = this.add.text(0, 0, '×1', { fontFamily: 'Arial Black', fontSize: 16, color: '#ffffff' }).setOrigin(0.5);
+    this.multBadge.add([mbg, this.multText]).setAlpha(0);
+
+    // botón de pausa
+    const pauseBtn = this.add.text(W - 42, 74, '⏸', { fontSize: 26 }).setOrigin(0.5).setInteractive().setDepth(20);
+    pauseBtn.on('pointerdown', (p, x, y, ev) => {
+      if (ev) ev.stopPropagation();
+      SFX.play('click');
+      this.scene.launch('pause');
+      this.scene.pause();
+    });
+
+    // botón cobrar
+    this.cashBtn = this.add.container(W / 2, 112).setVisible(false);
+    this.cashBg = this.add.rectangle(0, 0, 190, 42, 0xffd700, 1).setStrokeStyle(3, 0xfff6c0);
+    this.cashBg.setInteractive().on('pointerdown', (p, x, y, ev) => { ev.stopPropagation(); this.cashOut(); });
+    this.cashText = this.add.text(0, 0, '', { fontFamily: 'Arial Black', fontSize: 18, color: '#1a1226' }).setOrigin(0.5);
+    this.cashBtn.add([this.cashBg, this.cashText]);
+    this.tweens.add({ targets: this.cashBtn, scale: 1.06, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+
+    this.comboText = this.add.text(W / 2, 200, '', { fontFamily: 'Arial Black', fontSize: 30, color: '#ffd700', stroke: '#1a1226', strokeThickness: 6 }).setOrigin(0.5).setAlpha(0).setDepth(50);
+
+    // madriguera persistente (columna superior izquierda, sin pisar el score)
+    this.add.text(20, 10, '🌙', { fontSize: 14 });
+    this.denLevelText = this.add.text(20, 30, '', { fontSize: 10, color: '#cbbcf0' });
+    this.add.rectangle(20, 46, 80, 5, 0x000000, 0.4).setOrigin(0, 0.5);
+    this.denBar = this.add.rectangle(20, 46, 0, 5, 0xcf96ff, 1).setOrigin(0, 0.5);
+    this.updateDen(false);
+  }
+
+  // niveles de madriguera por luz acumulada (persistente entre partidas)
+  updateDen(celebrate) {
+    const LEVELS = [0, 500, 2000, 5000, 12000, 30000, 75000];
+    let lv = 0;
+    while (lv < LEVELS.length - 1 && this.totalLuz >= LEVELS[lv + 1]) lv++;
+    const lo = LEVELS[lv], hi = LEVELS[Math.min(lv + 1, LEVELS.length - 1)];
+    const frac = hi > lo ? Phaser.Math.Clamp((this.totalLuz - lo) / (hi - lo), 0, 1) : 1;
+    const leveledUp = this.denLevel !== undefined && lv > this.denLevel;
+    this.denLevel = lv;
+    this.denLevelText.setText(`Madriguera nv ${lv + 1}`);
+    this.denBar.width = 84 * frac;
+    if (celebrate && leveledUp) {
+      this.showCombo(`¡MADRIGUERA NIVEL ${lv + 1}!`);
+      this.cameras.main.flash(250, 207, 150, 255, false);
+      SFX.play('level');
+    }
+  }
+
+  rollTier() { const r = Math.random(); return this.diff.odds.findIndex(o => r < o); }
+  clampX(x, r) { return Phaser.Math.Clamp(x, WALL + r + 2, W - WALL - r - 2); }
+
+  updatePreview(x) {
+    this.preview.setTexture(`orb${this.nextTier}`);
+    this.preview.x = this.clampX(x, TIERS[this.nextTier].r);
+    this.aimLine.x = this.preview.x;
+  }
+
+  drop(x) {
+    if (!this.canDrop || this.gameOver) return;
+    this.canDrop = false;
+    this.cascadeCount = 0;
+    SFX.play('drop');
+    const golden = Math.random() < GOLDEN_CHANCE;
+    this.spawnOrb(this.clampX(x, TIERS[this.nextTier].r), 64, this.nextTier, golden);
+    this.nextTier = this.rollTier();
+    this.updatePreview(this.preview.x);
+    this.time.delayedCall(DROP_COOLDOWN, () => { this.canDrop = true; });
+  }
+
+  spawnOrb(x, y, tier, golden = false) {
+    const t = TIERS[tier];
+    const orb = this.matter.add.image(x, y, `orb${tier}${golden ? 'g' : ''}`);
+    orb.setBody({ type: 'circle', radius: t.r });
+    orb.setBounce(0.15).setFriction(0.55).setDensity(0.0012);
+    orb.setData({ tier, golden, born: this.time.now });
+    this.orbs.add(orb);
+    return orb;
+  }
+
+  update() {
+    this.processMerges();
+    if (this.gameOver) return;
+    this.checkOverflow();
+    this.glutoMood();
+  }
+
+  // ---------- Merges: fuera del paso físico ----------
+  processMerges() {
+    if (!this.mergeQueue.length) return;
+    const queue = this.mergeQueue;
+    this.mergeQueue = [];
+    for (const [a, b] of queue) {
+      if (!a.active || !b.active) continue;                      // ya consumidos por otro merge
+      const ta = a.getData('tier'), tb = b.getData('tier');
+      if (ta === undefined || ta !== tb) continue;
+      this.doMerge(a, b);
+    }
+  }
+
+  doMerge(a, b) {
+    const tier = a.getData('tier');
+    const golden = a.getData('golden') || b.getData('golden');
+    const nx = (a.x + b.x) / 2, ny = (a.y + b.y) / 2;
+    // matar tweens activos antes de destruir: un tween sobre un cuerpo
+    // físico destruido revienta el game loop (causa del congelamiento)
+    this.tweens.killTweensOf(a); this.tweens.killTweensOf(b);
+    a.destroy(); b.destroy();
+
+    const next = tier + 1;
+    const t = TIERS[next];
+    const orb = this.spawnOrb(nx, ny, next);
+    orb.setScale(0.3);
+    this.tweens.add({ targets: orb, scale: 1, duration: 200, ease: 'Back.Out' });
+    SFX.play('merge', next);
+
+    // juice: partículas del color del tier + anillo expansivo
+    this.add.particles(nx, ny, 'spark', {
+      speed: { min: 60, max: 200 }, lifespan: 450, scale: { start: 0.5, end: 0 },
+      quantity: Math.min(6 + next * 2, 18), tint: t.color, emitting: false,
+    }).explode();
+    const ring = this.add.circle(nx, ny, t.r * 0.6).setStrokeStyle(4, golden ? 0xffd700 : t.color, 0.8);
+    this.tweens.add({ targets: ring, scale: 2.2, alpha: 0, duration: 350, onComplete: () => ring.destroy() });
+    if (next >= 5) this.cameras.main.shake(120, 0.006);
+
+    // puntos + cascada
+    let pts = t.pts * (golden ? 2 : 1);
+    this.bank += pts;
+    this.cascadeCount++;
+    if (this.cascadeCount >= 2) {
+      if (this.multIdx < MULT_STEPS.length - 1) this.multIdx++;
+      this.showCombo(`¡CADENA ×${this.cascadeCount}!`);
+    }
+    this.floatText(nx, ny - t.r, `+${pts}`, golden ? '#ffd700' : '#ffffff');
+    if (next === TIERS.length - 1) {
+      this.showCombo('¡¡MÍTICO!!');
+      this.cameras.main.shake(300, 0.012);
+    }
+    this.refreshHud();
+  }
+
+  showCombo(msg) {
+    this.comboText.setText(msg).setAlpha(1).setScale(0.5);
+    this.tweens.add({ targets: this.comboText, scale: 1, duration: 150, ease: 'Back.Out' });
+    this.tweens.add({ targets: this.comboText, alpha: 0, delay: 700, duration: 300 });
+  }
+
+  cashOut() {
+    if (this.bank <= 0 || this.gameOver) return;
+    const gained = this.bank * MULT_STEPS[this.multIdx];
+    this.score += gained;
+    this.totalLuz += gained;
+    localStorage.setItem('gluto_luz', String(this.totalLuz));
+    this.glutoChomp();
+    SFX.play('gulp');
+    this.floatText(W / 2, 150, `¡GLUP! +${gained}`, '#ffd700', 34);
+    this.cameras.main.flash(150, 255, 215, 0, false);
+    this.bank = 0; this.multIdx = 0;
+    this.refreshHud();
+    this.updateDen(true);
+  }
+
+  refreshHud() {
+    this.scoreText.setText(`${this.score}`);
+    const m = MULT_STEPS[this.multIdx];
+    this.multText.setText(`×${m}`);
+    this.multBadge.setAlpha(m > 1 ? 1 : 0);
+    this.cashBtn.setVisible(this.bank > 0);
+    this.cashText.setText(`TRAGAR ${this.bank * m}`);
+  }
+
+  floatText(x, y, str, color, size = 22) {
+    const t = this.add.text(x, y, str, { fontFamily: 'Arial Black', fontSize: size, color, stroke: '#1a1226', strokeThickness: 4 }).setOrigin(0.5).setDepth(40);
+    this.tweens.add({ targets: t, y: y - 60, alpha: 0, duration: 900, onComplete: () => t.destroy() });
+  }
+
+  checkOverflow() {
+    let overflow = false;
+    for (const orb of this.orbs.getChildren()) {
+      if (!orb.active) continue;
+      const age = this.time.now - orb.getData('born');
+      const r = TIERS[orb.getData('tier')].r;
+      if (age > ORB_MIN_AGE && orb.y - r < DANGER_Y && orb.body && Math.abs(orb.body.velocity.y) < 0.25) {
+        overflow = true; break;
+      }
+    }
+    if (overflow) {
+      if (!this.overflowSince) this.overflowSince = this.time.now;
+      const t = (this.time.now - this.overflowSince) / this.diff.grace;
+      this.dangerZone.setAlpha(0.55 + 0.45 * Math.sin(this.time.now / 80));
+      this.dangerGlow.setAlpha(0.07 + t * 0.25);
+      if (t >= 1) this.endGame();
+    } else {
+      this.overflowSince = null;
+      this.dangerZone.setAlpha(0.55);
+      this.dangerGlow.setAlpha(0.07);
+    }
+  }
+
+  endGame() {
+    this.gameOver = true;
+    SFX.play('over');
+    const lost = this.bank * MULT_STEPS[this.multIdx];
+    const veil = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0).setDepth(90);
+    this.tweens.add({ targets: veil, fillAlpha: 0.75, duration: 400 });
+    const ui = this.add.container(W / 2, H / 2).setDepth(100).setAlpha(0);
+    ui.add(this.add.text(0, -70, '¡GLUTO ESTÁ LLENO!', { fontFamily: 'Arial Black', fontSize: 34, color: '#ff5566', stroke: '#1a1226', strokeThickness: 8 }).setOrigin(0.5));
+    ui.add(this.add.text(0, -10, `Luz recolectada: ${this.score}`, { fontSize: 24, color: '#ffffff' }).setOrigin(0.5));
+    if (lost > 0) ui.add(this.add.text(0, 28, `Se escaparon ${lost} de luz sin tragar 😬`, { fontSize: 18, color: '#ffd700' }).setOrigin(0.5));
+    const btn = this.add.rectangle(0, 92, 200, 48, 0xffd700).setStrokeStyle(3, 0xfff6c0).setInteractive();
+    btn.on('pointerdown', () => { SFX.play('click'); this.scene.restart(); });
+    ui.add([btn, this.add.text(0, 92, 'REINTENTAR', { fontFamily: 'Arial Black', fontSize: 20, color: '#1a1226' }).setOrigin(0.5)]);
+    const menuBtn = this.add.rectangle(0, 152, 200, 42, 0x3d2f55).setStrokeStyle(2, 0x6a5a8f).setInteractive();
+    menuBtn.on('pointerdown', () => { SFX.play('click'); this.scene.start('menu'); });
+    ui.add([menuBtn, this.add.text(0, 152, 'MENÚ', { fontFamily: 'Arial Black', fontSize: 16, color: '#ffffff' }).setOrigin(0.5)]);
+    this.tweens.add({ targets: ui, alpha: 1, duration: 400, delay: 200 });
+  }
+}
+
+// ---------- Menú principal ----------
+class MenuScene extends Phaser.Scene {
+  constructor() { super('menu'); }
+  create() {
+    const TH = THEMES[SETTINGS.theme];
+    const g = this.add.graphics();
+    g.fillGradientStyle(TH.bgTop, TH.bgTop, TH.bgBot, TH.bgBot2, 1);
+    g.fillRect(0, 0, W, H);
+
+    // Gluto asomándose: ojos + dientes
+    for (const ex of [W / 2 - 70, W / 2 + 70]) {
+      this.add.ellipse(ex, 170, 64, 76, 0xfff6e8);
+      this.add.circle(ex + 6, 176, 17, 0x2a1a3a);
+      this.add.circle(ex + 12, 170, 5, 0xffffff, 0.95);
+    }
+    const teeth = this.add.container(0, 238);
+    const tw = 30, n = Math.ceil(W / tw);
+    for (let i = 0; i < n; i++) {
+      teeth.add(this.add.triangle(i * tw + tw / 2, 0, 0, 0, tw, 0, tw / 2, 20, 0xfff6e8).setOrigin(0.5, 0));
+    }
+
+    this.add.text(W / 2, 318, 'GLUTO', { fontFamily: 'Arial Black', fontSize: 56, color: '#ffd700', stroke: '#1a1226', strokeThickness: 10 }).setOrigin(0.5);
+    this.add.text(W / 2, 362, 'alimenta a la bestia de luz', { fontSize: 15, color: '#cbbcf0' }).setOrigin(0.5);
+
+    const luz = parseInt(localStorage.getItem('gluto_luz') || '0', 10);
+    this.add.text(W / 2, 396, `🌙 Madriguera · ${luz} luz acumulada`, { fontSize: 13, color: '#9a8fc0' }).setOrigin(0.5);
+
+    mkBtn(this, W / 2, 458, 240, 56, 'JUGAR', () => this.scene.start('main'), { size: 24 });
+
+    const opt = { bg: 0x3d2f55, stroke: 0x6a5a8f, color: '#ffffff', size: 15 };
+    const diffOrder = Object.keys(DIFFS);
+    mkBtn(this, W / 2, 532, 240, 42, `Dificultad: ${DIFFS[SETTINGS.diff].label}`, tx => {
+      SETTINGS.diff = diffOrder[(diffOrder.indexOf(SETTINGS.diff) + 1) % diffOrder.length];
+      saveSettings();
+      tx.setText(`Dificultad: ${DIFFS[SETTINGS.diff].label}`);
+    }, opt);
+    const themeOrder = Object.keys(THEMES);
+    mkBtn(this, W / 2, 584, 240, 42, `Tema: ${THEMES[SETTINGS.theme].label}`, () => {
+      SETTINGS.theme = themeOrder[(themeOrder.indexOf(SETTINGS.theme) + 1) % themeOrder.length];
+      saveSettings();
+      this.scene.restart(); // re-pinta el menú con el tema nuevo
+    }, opt);
+    mkBtn(this, W / 2, 636, 240, 42, `Sonido: ${SETTINGS.sfx ? 'ON' : 'OFF'}`, tx => {
+      SETTINGS.sfx = !SETTINGS.sfx;
+      saveSettings();
+      tx.setText(`Sonido: ${SETTINGS.sfx ? 'ON' : 'OFF'}`);
+    }, opt);
+  }
+}
+
+// ---------- Pausa (overlay sobre main) ----------
+class PauseScene extends Phaser.Scene {
+  constructor() { super('pause'); }
+  create() {
+    this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.72).setInteractive(); // bloquea el input del juego
+    this.add.text(W / 2, 190, 'PAUSA', { fontFamily: 'Arial Black', fontSize: 44, color: '#ffffff', stroke: '#1a1226', strokeThickness: 8 }).setOrigin(0.5);
+    mkBtn(this, W / 2, 290, 240, 52, 'REANUDAR', () => {
+      this.scene.resume('main');
+      this.scene.stop();
+    }, { size: 20 });
+    const opt = { bg: 0x3d2f55, stroke: 0x6a5a8f, color: '#ffffff', size: 15 };
+    mkBtn(this, W / 2, 356, 240, 42, 'REINICIAR', () => {
+      this.scene.stop('main');
+      this.scene.start('main');
+    }, opt);
+    mkBtn(this, W / 2, 408, 240, 42, 'MENÚ PRINCIPAL', () => {
+      this.scene.stop('main');
+      this.scene.start('menu');
+    }, opt);
+    mkBtn(this, W / 2, 460, 240, 42, `Sonido: ${SETTINGS.sfx ? 'ON' : 'OFF'}`, tx => {
+      SETTINGS.sfx = !SETTINGS.sfx;
+      saveSettings();
+      tx.setText(`Sonido: ${SETTINGS.sfx ? 'ON' : 'OFF'}`);
+    }, opt);
+  }
+}
+
+window.__game = new Phaser.Game({ // __game: debug prototipo
+  type: Phaser.AUTO,
+  parent: 'game',
+  width: W,
+  height: H,
+  backgroundColor: '#120c1d',
+  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+  physics: { default: 'matter', matter: { gravity: { y: 1.1 } } },
+  scene: [MenuScene, Main, PauseScene],
+});
+</script>
+</body>
+</html>
